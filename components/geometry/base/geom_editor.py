@@ -138,3 +138,9 @@ class GeometryEditor(BaseModeLogic):
     
     def createQuadrangle(self):
         return gobjects.GeometryQuadrangle()
+
+    def createSegment(self):
+        """Create segment object
+        @return: Return created segment object
+        """
+        return gobjects.GeometrySegment()

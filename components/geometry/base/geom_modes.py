@@ -357,6 +357,15 @@ class GeometryEditMode(BaseEditMode):
                 if isinstance(obj, (GeometryTriangle, GeometryQuadrangle)):
                     self.state = GeometryEditMode.ES_PerimeterChange
                     self.perimetr_changer = TextInput(obj, self._perimeter_change_callback, obj.getPropertyValue(GeometryAbstractObject.PropPerimeter))
+
+        if key == ois.KC_M:
+            _selected = self._logic._getSheet().getSelected()
+            self.active_object = self._logic.createSegment()
+            if self.active_object.makeBasedOnObjects(_selected):
+                self._logic._getSheet().addChild(self.active_object)
+            else:
+                self.active_object.delete()
+            self.active_object = None
         
         return False
     

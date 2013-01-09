@@ -1762,3 +1762,189 @@ class GeometryUnion(suit.core.objects.ObjectDepth):
         @type _obj:    suit.core.objects.ObjectDepth
         """
         pass
+
+class GeometrySegment(suit.core.objects.ObjectDepth, GeometryAbstractObject):
+    """Class that realize geometry sector
+    """
+    def __init__(self):
+        suit.core.objects.ObjectDepth.__init__(self)
+        GeometryAbstractObject.__init__(self)
+
+        self.circle = None
+        self.line = None
+
+        self.width = 0.12
+        self.radius = 1.2
+        self.sectors = 20
+
+        self.line = None
+        self.circle = None
+        # mesh
+        self.manualObject = None
+        self.needMeshUpdate = False
+
+    def __del__(self):
+        suit.core.objects.ObjectDepth.__del__(self)
+        GeometryAbstractObject.__del__(self)
+
+    def delete(self):
+        suit.core.objects.ObjectDepth.delete(self)
+        GeometryAbstractObject.delete(self)
+
+    def makeBasedOnObjects(self, _objects):
+        """Create segment based on specified objects
+        @param _objects: List of objects
+        @type _objects: list
+
+        @return: Return true, if circle was created; otherwise return false
+        """
+
+        if len(_objects) == 2:
+            # fist way to build triangle based on lines
+            for obj in _objects:
+                if isinstance(obj, GeometryLineSection):
+                    self.setLine(obj)
+                if isinstance(obj, GeometryCircle):
+                    self.circle = obj
+            if self.circle and self.line:
+                return True
+                #todo check accessory points to circle
+
+        return False
+    def _getMaterialName(self):
+        """Returns material name based on object state
+        """
+        return geom_env.material_state_pat % ("triangle_%s" % (state_post[self.getState()]))
+
+    def _getEqualMaterialName(self):
+        """Returns material name based on object state
+        """
+        return geom_env.material_state_pat % ("lsec_%s" % (state_post[self.getState()]))
+
+    def _update(self, _timeSinceLastFrame):
+        """Update object state
+        """
+
+        if not self.needUpdate or self.line is None or self.circle is None:
+            return
+
+        # update based on center point
+        self.setPosition(self.circle.center_point.getPosition())
+
+        self._updateMesh()
+
+        suit.core.objects.ObjectDepth._update(self, _timeSinceLastFrame)
+
+    def _updateView(self):
+        """Updates graphical object representation
+        """
+        if self.needStateUpdate:
+            self.needStateUpdate = False
+            self.manualObject.setMaterialName(0, self._getMaterialName())
+
+        suit.core.objects.ObjectDepth._updateView(self)
+
+    def _updateMesh(self):
+        """Updates sector mesh
+        """
+        # recreate geometry
+        if self.manualObject is None:
+            self.manualObject = render_engine._ogreSceneManager.createManualObject(str(self))
+            self.manualObject.setDynamic(True)
+            # attach to scene node
+            self.sceneNode.attachObject(self.manualObject)
+            self.manualObject.begin(self._getMaterialName())
+            self.sceneNode.setPosition(self.circle.center_point.getPosition())
+        else:
+            self.manualObject.beginUpdate(0)
+
+
+        # calculate angle value
+        p1 = self.line.getBegin().getPosition()
+        p2 = self.line.getEnd().getPosition()
+        pC = self.circle.center_point.getPosition()
+
+        a1 = math.atan2(p1[1] - pC[1], p1[0] - pC[0])
+        a2 = math.atan2(p2[1] - pC[1], p2[0] - pC[0])
+
+        a1 = math.degrees(a1)
+        a2 = math.degrees(a2)
+
+        if a1 < 0:
+            a1 += 360
+        if a2 < 0:
+            a2 += 360
+
+        if a1 < a2:
+            a1 += 360
+        if math.fabs(a2-a1) > 180:
+            t = a1
+            a1 = a2
+            a2 = t - 360
+
+
+        # recalculate mesh
+        a_step = ogre.Degree((a2 - a1) / self.sectors).valueRadians()
+        angle = ogre.Degree(a1).valueRadians()
+
+        r_out = self.circle.radius
+        idx_offset = 0
+        r_in = r_out
+
+        angle_a = math.fabs(a2-a1)
+        angle_b = (180-angle_a)/2
+        angle_o = 180-angle_b
+        delta  = math.fabs(math.degrees(a_step))
+        for sector in xrange(self.sectors):
+            vx = math.cos(angle)
+            vy = math.sin(angle)
+            self.manualObject.position(vx * r_in, vy * r_in, 0.0)
+            self.manualObject.normal(0, 0, 1)
+            self.manualObject.position(vx * r_out, vy * r_out, 0.0)
+            self.manualObject.normal(0, 0, 1)
+
+            angle += a_step
+            angle_o -= delta
+            #Law of sines
+            r_in = r_out * math.sin(math.radians(angle_b)) / math.sin(math.radians(angle_o))
+            vx = math.cos(angle)
+            vy = math.sin(angle)
+            self.manualObject.position(vx * r_in, vy * r_in, 0.0)
+            self.manualObject.normal(0, 0, 1)
+            self.manualObject.position(vx * r_out, vy * r_out, 0.0)
+            self.manualObject.normal(0, 0, 1)
+            self.manualObject.quad(idx_offset, idx_offset + 1, idx_offset + 3, idx_offset + 2)
+            idx_offset += 4
+        self.manualObject.end()
+
+
+    def setLine(self, _line):
+        """Set first base point
+                """
+        if self.line is not None:
+            _line.removeLinkedObject(suit.core.objects.Object.LS_BASEONTHIS, self)
+
+        self.line = _line
+
+        if self.line is not None:
+            _line.addLinkedObject(suit.core.objects.Object.LS_BASEONTHIS, self)
+
+
+    def get_idtf(self):
+        """Returns object identifier.
+        It parse structures like: Point(A), Point A, pA and return A
+        """
+        return self.getText()
+
+    def build_text_idtf(self):
+        """Builds text identifier for an object
+        """
+        idtf1 = self.line.getBegin().build_text_idtf()
+        idtf2 = self.line.getEnd().build_text_idtf()
+        idtfC = self.circle.build_text_idtf()
+
+
+        if idtf1 is None or idtfC is None or idtf2 is None:
+            return None
+
+        return "%s(%s;%s;%s)" % (u'Сегмент', idtf1,  idtf2, idtfC)
